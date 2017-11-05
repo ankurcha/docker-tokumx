@@ -3,9 +3,10 @@
 
 
 PORT=10000
-
+RS="rs0"
 if [ ! -z "$1" ]; then
 PORT=$1
+RS=$2
 fi
 
 PORT_1=$(( $PORT - 1 ))
@@ -15,20 +16,8 @@ PORT2=$(( $PORT + 2 ))
 
 set -e
 
-if sudo docker ps | grep "ankurcha/tokumx" >/dev/null; then
-    echo ""
-    echo "It looks like you already have some containers running."
-    echo "Please take them down before attempting to bring up another"
-    echo "cluster with the following command:"
-    echo ""
-    echo "  make stop-cluster"
-    echo ""
-
-    exit 1
-fi
-
-# start docker containers for 3xreplicaset rs0
-SHARD00_ID=$(sudo docker run -d ankurcha/tokumx mongod --replSet rs0 --shardsvr --logpath /dev/stdout --bind_ip 0.0.0.0 --port $PORT)
+# start docker containers for 3xreplicaset $RS
+SHARD00_ID=$(sudo docker run -d ankurcha/tokumx mongod --replSet $RS --shardsvr --logpath /dev/stdout --bind_ip 0.0.0.0 --port $PORT)
 SHARD00_IP=$(sudo docker inspect ${SHARD00_ID} | grep "IPAddress" | cut -d':' -f2 | cut -d'"' -f2)
 echo "Your shard container ${SHARD00_ID} listen on ip: ${SHARD00_IP} (waiting that becomes ready)"
 until sudo docker logs ${SHARD00_ID} | grep "replSet info you may need to run replSetInitiate" >/dev/null;
@@ -36,7 +25,7 @@ do
     sleep 2
 done
 
-SHARD01_ID=$(sudo docker run -d ankurcha/tokumx mongod --replSet rs0 --shardsvr --logpath /dev/stdout --bind_ip 0.0.0.0 --port $PORT1)
+SHARD01_ID=$(sudo docker run -d ankurcha/tokumx mongod --replSet $RS --shardsvr --logpath /dev/stdout --bind_ip 0.0.0.0 --port $PORT1)
 SHARD01_IP=$(sudo docker inspect ${SHARD01_ID} | grep "IPAddress" | cut -d':' -f2 | cut -d'"' -f2)
 echo "Your shard container ${SHARD01_ID} listen on ip: ${SHARD01_IP} (waiting that becomes ready)"
 until sudo docker logs ${SHARD01_ID} | grep "replSet info you may need to run replSetInitiate" >/dev/null;
@@ -44,7 +33,7 @@ do
     sleep 2
 done
 
-SHARD02_ID=$(sudo docker run -d ankurcha/tokumx mongod --replSet rs0 --shardsvr --logpath /dev/stdout --bind_ip 0.0.0.0 --port $PORT2)
+SHARD02_ID=$(sudo docker run -d ankurcha/tokumx mongod --replSet $RS --shardsvr --logpath /dev/stdout --bind_ip 0.0.0.0 --port $PORT2)
 SHARD02_IP=$(sudo docker inspect ${SHARD02_ID} | grep "IPAddress" | cut -d':' -f2 | cut -d'"' -f2)
 echo "Your shard container ${SHARD02_ID} listen on ip: ${SHARD02_IP} (waiting that becomes ready)"
 until sudo docker logs ${SHARD02_ID} | grep "replSet info you may need to run replSetInitiate" >/dev/null;
@@ -54,7 +43,7 @@ done
 
 
 echo "initialize replicaset"
-mongo ${SHARD00_IP}:$PORT --eval "rs.initiate({_id: \"rs0\", members: [{_id:0, host:\"${SHARD00_IP}:$PORT\"}, {_id:1, host:\"${SHARD01_IP}:$PORT1\"}, {_id:2, host:\"${SHARD02_IP}:$PORT2\"}]});"
+mongo ${SHARD00_IP}:$PORT --eval "rs.initiate({_id: \"$RS\", members: [{_id:0, host:\"${SHARD00_IP}:$PORT\"}, {_id:1, host:\"${SHARD01_IP}:$PORT1\"}, {_id:2, host:\"${SHARD02_IP}:$PORT2\"}]});"
 until sudo docker logs ${SHARD00_ID} | grep "replSet PRIMARY" >/dev/null;
 do
     sleep 2
@@ -82,7 +71,7 @@ do
 done
 
 # Add the shard
-mongo ${MONGOS0_IP}:$PORT_1 --eval "sh.addShard(\"rs0/${SHARD00_IP}:$PORT\");"
+mongo ${MONGOS0_IP}:$PORT_1 --eval "sh.addShard(\"$RS/${SHARD00_IP}:$PORT\");"
 
 echo "OK, you can connect to mongos using: "
 echo "mongo ${MONGOS0_IP}:$PORT_1"
